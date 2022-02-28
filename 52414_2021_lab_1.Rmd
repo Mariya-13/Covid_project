@@ -1,0 +1,329 @@
+---
+title: "52414 - lab 1"
+author: "52414"
+date: "27/4/2021"
+output: html_document
+---
+
+# *Lab 1: Basic Data Wrangling and Plotting*  
+<br/><br/>  
+  
+
+<br/><br/>
+  
+  
+**Submission Deadline: 19/5/2021 at 23:59**
+
+<br/><br/>
+The only allowed libraries are the following (**please do not add your own**):
+```{r, include=FALSE}
+library(tidyverse) # This includes dplyr, stringr, ggplot2, .. 
+library(data.table)
+```  
+<br/><br/>
+
+## Analysis of the World Covid-19 Dataset         
+
+
+
+
+**Solution:**  
+
+Write your solutions here seperately for each question in the followng format: 
+
+1. Loading the data and change it to date class
+
+```{r}
+full_dataset <- read.csv(url("https://covid.ourworldindata.org/data/owid-covid-data.csv"),header = T, comment.char = "#")
+print(class(full_dataset$date))  ### need change to date format
+full_dataset$date<-as.Date(full_dataset$date)
+print(class(full_dataset$date)) 
+```
+
+
+
+2. We choiced the needed column and then ordered them according to data (to have only the newest date), then we chose only unique countries and then we ordered it in decreasing order to display top 5.
+```{r}
+top_5_casesm <- full_dataset[,c(3,4,11)]
+top_5_casesm <- na.omit(top_5_casesm)
+top_5_casesm <- top_5_casesm[order(top_5_casesm$date,decreasing = T),]
+my_date <- unique(top_5_casesm$date)[1]
+top_5_casesm <- top_5_casesm[top_5_casesm$date==my_date,]
+top_5_casesm <- top_5_casesm[order(top_5_casesm$total_cases_per_million,decreasing = T),]
+head(top_5_casesm,5)
+
+top_5_deathsm <- full_dataset[,c(3,4,14)]
+top_5_deathsm <- na.omit(top_5_deathsm)
+top_5_deathsm <- top_5_deathsm[order(top_5_deathsm$date,decreasing = T),]
+top_5_deathsm <- top_5_deathsm[top_5_deathsm$date==my_date,]
+top_5_deathsm <- top_5_deathsm[order(top_5_deathsm$total_deaths_per_million,decreasing = T),]
+head(top_5_deathsm,5)
+
+top_5_vaccinated <- full_dataset[,c(3,4,40)]
+top_5_vaccinated <- na.omit(top_5_vaccinated)
+top_5_vaccinated <- top_5_vaccinated[order(top_5_vaccinated$date,decreasing = T),]
+top_5_vaccinated <- top_5_vaccinated[top_5_vaccinated$date==my_date,]
+top_5_vaccinated <- top_5_vaccinated[order(top_5_vaccinated$total_vaccinations_per_hundred,decreasing = T),]
+head(top_5_vaccinated,5)
+```
+
+
+3A.We got rid of the locations that are not applicable to our questions than we draw a ggplot.
+```{r}
+options(scipen=999)
+myfun = function(df,col_name){
+  relevant_df <-df %>% drop_na(all_of(col_name)) %>% filter((continent=="") & location != "International" & location != "World" & location != "European Union")
+  ggplot(relevant_df,aes_string(y=col_name,col="location"))+
+    geom_line(aes(x=as.Date(date)))+ 
+    ylab(as.character(col_name)) +xlab("Date")+
+    ggtitle(label="Continents distribution by date",subtitle = as.character(col_name))}
+```
+The results went out really hard to read and analyze. The plot have a lot of peacks and its hard to see the treand, it is really dense.
+
+3B.Because log is defined only positively we replaced nonpositive num by 0, then applied fun from 3a to new_cases, new_deaths, new vaccinations.
+```{r}
+myfun(full_dataset,"new_cases")
+### log function does not apply to nonpositive numbers including 0, hence we will replace <= 0 by 1 (since log(1)=0)
+log_smooth <- full_dataset
+log_smooth$new_cases_smoothed <- replace(log_smooth$new_cases_smoothed, log_smooth$new_cases_smoothed<=0,1)
+log_smooth$new_cases_smoothed <- log(log_smooth$new_cases_smoothed)
+myfun(log_smooth,"new_cases_smoothed")
+
+log_deaths <- full_dataset
+log_deaths$new_deaths <- replace(log_deaths$new_deaths, log_deaths$new_deaths<=0,1)
+log_deaths$new_deaths <- log(log_deaths$new_deaths)
+myfun(log_deaths,"new_deaths")
+
+log_vaccinated <- full_dataset
+log_vaccinated$new_vaccinations <- replace(log_vaccinated$new_vaccinations, log_vaccinated$new_vaccinations<=0,1)
+log_vaccinated$new_vaccinations <- log(log_vaccinated$new_vaccinations)
+myfun(log_vaccinated,"new_vaccinations")
+
+```
+The smooth log graph is easier to read and analyze since it is not that saturated and does not have that much peaks. We had to replace values that are equals or smaller than 0 (log is not defined there), that is why the graph is not that precise as original one. Howver, now we can observe the trends.
+
+4A.We started with filtering data frame to have country level data. Then we did continent vector, NA changed to 0 so they won't interfere. Then we aggragted the new dataframe by date, so now we received new data for every continent .
+
+```{r}
+myfunction = function(df,col){
+  df<-df%>%filter((continent!="") & (location != "World"))
+  continents=c("Africa","Asia","Europe","North America","Oceania","South America")
+  continent.df<- data.frame()
+  for (i in c(continents)){
+    x <- df %>% filter(continent == i| location == i) 
+    x <- x[c("date",col)]
+    x[is.na(x)]=0
+    colnames(x)=c("date","x")
+    aggt=aggregate(x$x, by=list(x$date), sum)
+    aggt$continent=i
+    continent.df <- rbind(continent.df,aggt)}
+colnames(continent.df)=c("date",all_of(col),"continent")
+return(continent.df)
+}
+
+```
+
+
+4B.We applied the function from a and filled the new_tests_smoothed column 
+```{r}
+applied_smooth_test <- myfunction(full_dataset,"new_tests_smoothed")
+applied_smooth_test$new_tests_smoothed <- replace(applied_smooth_test$new_tests_smoothed,applied_smooth_test$new_tests_smoothed<=0,1)
+applied_smooth_test$new_tests_smoothed <- log(applied_smooth_test$new_tests_smoothed)
+applied_smooth_test$location <- applied_smooth_test$continent  ### arbitrary location to apply fun of question 3 here
+applied_smooth_test$continent = "" ### remove the duplicated column 
+myfun(applied_smooth_test,"new_tests_smoothed")
+```
+The log graph is smoother than previous one so it is easier to read and analyze it.
+
+5A. We created a new data frame for every country with columns total_cases_per_M, total_deaths_per_M, then we did a plot based on our dataframe and calculated a regression line.
+```{r,warning=F}
+country_names <- unique(full_dataset$location)
+uniq_country_df <- cbind(country_names,rep(0,length(country_names)),rep(0,length(country_names)))
+colnames(uniq_country_df) <- c("location","total_cases_per_M","total_deaths_per_M")
+arbitrary_df <- full_dataset[,c(3,11,14)]
+arbitrary_df <- na.omit(arbitrary_df)
+for(i in 1:length(country_names)){
+  uniq_country_df[i,2] <- max(arbitrary_df[arbitrary_df$location==country_names[i],2])
+  uniq_country_df[i,3] <- max(arbitrary_df[arbitrary_df$location==country_names[i],3])
+}
+### remove the non maximum rows
+uniq_country_df[uniq_country_df==-Inf]<-NA
+uniq_country_df<- na.omit(uniq_country_df)
+uniq_country_df <- as.data.frame(uniq_country_df)
+uniq_country_df$total_cases_per_M <- as.numeric(uniq_country_df$total_cases_per_M)
+uniq_country_df$total_deaths_per_M <- as.numeric(uniq_country_df$total_deaths_per_M)
+
+plot(uniq_country_df$total_cases_per_M,uniq_country_df$total_deaths_per_M,xlab = "Cases per M",ylab = "Deaths per M",main = "Regression for Cases-Deaths mapping",col="purple",pch=16)
+abline(lm(uniq_country_df$total_deaths_per_M ~ uniq_country_df$total_cases_per_M),col="blue",lwd=2)
+my_reg <- lm(uniq_country_df$total_deaths_per_M ~ uniq_country_df$total_cases_per_M)
+cat("The slope is the beta_1 which is:", my_reg$coefficients[2])
+```
+
+$\beta_1$ represent in our case the effect (or the realationship) of cases per millions on death per millions. in our case we would expect that for each case of covid in a specific country, the deaths will increase by 0.015 units (which is very logical since for each case there is a chance of death).
+
+5B.By selecting we found out the date on which were the max amount of cases and deaths for every country and then added to a new datafram using a. Then we did plot and draw regreassion line.
+```{r}
+cases <- full_dataset %>%  select(location,new_cases,date) %>% group_by(location) %>% top_n(1,new_cases) %>% top_n(1,date)
+death <- full_dataset %>%  select(location,new_deaths,date) %>%group_by(location) %>% top_n(1,new_deaths) %>% top_n(1,date)
+
+group_all <- full_join(cases,death, by="location") %>% na.omit()
+
+reg <- lm(as.matrix(date.y)~as.matrix(date.x), group_all)
+summary(reg)
+ggplot(data=group_all, mapping=aes(x=date.x,y=date.y))+geom_point()+geom_smooth(method="lm",se=F,col="purple",lwd=2)
+```
+The slope deascribe the realtionship between on which date was the max amount of cases how it influence on the date when the max amount people die. Our slop is:  0.59073, the intercept: 7614.01203. Our slope represent that every new case rise will reasult in 0.59073 deaths. Our intercept 7614.01203, meaning that if we will have 0 cases we will have 7614.01203, which does not make sense since we used dates in which there were max amount of cases and deaths. If The slope would be close to 1, this would mean that one case is would result in at least one new death (+intercept).
+
+6.We made a new dataframe, we put 0 instead of NA to understand the development of cases, deaths and vaccinations by month. Then we aggreagated helper dataset, deleted from it columns that reapet each other and rename columns. Then using new dataset we draw plot.
+```{r,warning=F}
+helper_df <-data.frame(full_dataset$location,full_dataset$date,full_dataset$new_cases, full_dataset$new_deaths, full_dataset$new_vaccinations)
+helper_df[is.na(helper_df)] <- 0 ##we put 0,where there is no info(for e.g. about vaccination)to have a full picture
+date_months = strftime(helper_df$full_dataset.date, "%Y-%m") #compile to monthly count
+
+
+helper_df$full_dataset.new_cases <- as.numeric(helper_df$full_dataset.new_cases)
+helper_df$full_dataset.new_deaths<-as.numeric(helper_df$full_dataset.new_deaths)
+helper_df$full_dataset.new_vaccinations <- as.numeric(helper_df$full_dataset.new_vaccinations)
+
+
+cases.agg <- aggregate(full_dataset.new_cases~date_months, data = helper_df, FUN = sum)
+deaths.agg <- aggregate(full_dataset.new_deaths~date_months, data = helper_df, FUN = sum)
+vaccinated.agg <- aggregate(full_dataset.new_vaccinations~date_months, data = helper_df, FUN = sum)
+
+monthly = data.frame(cases.agg, deaths.agg,vaccinated.agg)
+to.remove <- c('date_months.1', 'date_months.2') 
+monthly <- monthly[, !colnames(monthly) %in% to.remove] #remove doubled columns with date
+colnames(monthly) <- c("months","new_cases","new_deaths","new_vaccinations")
+
+
+###drawing a barplot
+options(scipen=999)
+monthly_new_cases<-barplot(monthly$new_cases,
+        main= "Monthly new cases in the world",
+        xlab = "Month",
+        ylab= "New Cases",
+        ylim=c(0,80000000),
+        col = "lightblue",
+        space=0.5,
+        width=50,
+        names.arg = monthly$months,las=2, cex.axis = 0.7, cex.names = 0.7)
+text(x=monthly_new_cases,y=monthly$new_cases,label=monthly$new_cases, pos=3, cex=0.5, col="darkblue")
+
+
+options(scipen=999)
+monthly_new_deaths<-barplot(monthly$new_deaths,
+        main= "Monthly new deaths in the world",
+        xlab = "Month",
+        ylab= "New Deaths",
+        ylim=c(0,1500000),
+        col = "grey",
+        space=0.5,
+        width=50,
+        names.arg = monthly$months, cex.axis = 0.7, cex.names = 0.7, las=2)
+text(x=monthly_new_deaths,y=monthly$new_deaths,label=monthly$new_deaths, pos=3, cex=0.5, col="black")
+
+
+options(scipen=999)
+monthly_new_vaccinations<-barplot(monthly$new_vaccinations,
+        main= "Monthly new vaccinations in the world",
+        xlab = "Month",
+        ylab= "New Vaccinations",
+        col = "lightgreen",
+        ylim=c(0,2000000000),
+        space=0.5,
+        width=50,
+        names.arg = monthly$months, cex.axis = 0.7, cex.names = 0.7, las=2)
+text(x=monthly_new_vaccinations,y=monthly$new_vaccinations,label=monthly$new_vaccinations, pos=3, cex=0.5, col="black")
+
+```
+
+
+7. We added to the covid data-frame a new column called death_rate, defined for location and date as the number of total_deaths divided by the number of total_cases. This column represents the probability of a diagnosed Covid-19 case to die from the disease. Next, we made a histogram of the current death rates over all countries with 50 bins. 
+And displayed in a table the top 3 countries having the highest death rate.
+```{r}
+death_rate=c(full_dataset$total_deaths)/c(full_dataset$total_cases)
+full_dataset=cbind(full_dataset,death_rate)
+temp1 <-  aggregate(total_deaths~location,full_dataset,FUN = max)
+temp2 <-  aggregate(total_cases~location,full_dataset,FUN = max)
+tempdata <- full_join(temp1,temp2, by = "location")
+tempdata$death_rate=tempdata$total_deaths/tempdata$total_cases
+
+hist(tempdata$death_rate, breaks=50, main="death rate frequency",xlab = "death rate",col="pink", font.axis=2)
+
+top3deathrate <- tempdata
+top3deathrate <- top3deathrate[with(top3deathrate,order(-death_rate)),]
+top3deathrate <- top3deathrate[1:3,]
+top3=data.frame("countries"=c(as.character(top3deathrate$location)),"death_rate"=c(top3deathrate$death_rate))
+t=setDT(top3)
+t
+```
+8.We created an additional column called two_dose_fraction, defined as the number of fully vaccinated people divided by the number of vaccinated people. Next, we plotted for Israel, United Kingdom and United States this value as a function of date, on the same plot with different colors. 
+```{r}
+full_dataset$two_dose_fraction = full_dataset$people_fully_vaccinated/full_dataset$people_vaccinated
+selected_countries <- full_dataset %>% select(location, date, two_dose_fraction) %>% na.omit() %>% subset( location == "Israel" |location =='United Kingdom'|location =='United States')
+
+ggplot(selected_countries, aes(x=date, y=two_dose_fraction))+geom_point(aes(color = location))
+```
+Israel: Israel started very active vacination policy that is why line rises very fast and then it becomes stably high, which is explained by reality facts thata lot of people still do vacination.
+United Kingdom: we can see that line have a growth and then in some points the growth becomes slower. It can be explained by the Corona waves, when UK was in a red zone everybody to vaccinate and then when griwth of new cases stopped, people also have stopped to vaccinate and then again. 
+US: we can see that US have started the vaccination later than other countries, there was a little growth, probably, because of people scare, but then with anti-vaccination campains the vaccination level also become low.
+
+9A.The function  recieves as input the data-frame, a country name and the name of two columns, and computes the value of their cross-correlation in this country for time delay of up to two months apart, that is for all values of $\Delta_t$ between $-60$ days and $60$ days. The function return a vector of length $121$ representing these correlations. We started with matrix, then we made a loop to filter and select what is needed, and then did the vector.
+```{r}
+myfun.9 <- function(df,country,col1,col2){
+  location_req <- filter(df,location== country)
+  teamp1 <- location_req[[col1]]
+  teamp2 <- location_req[[col2]]
+  min <- min(location_req$date)
+  max <- max(location_req$date)
+  cross <- c()
+  for(c in seq(60,0,-1)){
+    delta_Ty <- seq(min,max-c,by="days")
+    delta_Tx <- seq(min+c,max,by="days")
+    x <- location_req %>% filter(date %in% delta_Tx) %>%  select(col1)
+    y <- location_req %>% filter(date %in% delta_Ty) %>%  select(col2)
+    cross <- c(cross, cor(y,x,use="complete.obs"))}
+    for(c in seq(1,60,1)){
+    delta_Tx <- seq(min,max-c,by="days")
+    delta_Ty <- seq(min+c,max,by="days")
+    x <- location_req %>% filter(date %in% delta_Tx) %>%  select(col1)
+    y <- location_req %>% filter(date %in% delta_Ty) %>%  select(col2)
+    cross <- c(cross, cor(x,y,use="complete.obs"))}
+return(cross)}
+```
+9B. It Computes the cross correlation between the number of  `new_cases` and `new_deaths` for *Canada*, and plot it as a function of $\Delta_t$. 
+```{r}
+canada <- myfun.9(full_dataset,"Canada","new_cases","new_deaths")
+plot(seq(-60,60,1), canada, main= 'cross correlation for Canada', xlab='time delay', ylab='cross correlation of Candada.')
+```
+Time delay according to plot is 17 days(which is the peak), this is means that it takes 17 days in Canada from moment of infection to death.
+
+10.We aggregated the needed data, than comlied datasets together by "location", then we draw plot and higlighted Israel and United Kindom.
+```{r}
+max_smoothed <- aggregate(new_cases_smoothed~location,full_dataset,FUN = max)
+current_cases <- full_dataset %>% filter(date == '2021-04-23') %>% select(location,new_cases_smoothed)
+total_vacc_per_hun <- full_dataset %>% filter(date == '2021-04-01') %>% select(location,total_vaccinations_per_hundred)
+names(max_smoothed)[2]<-paste("maximal_cases_smoothed") 
+names(current_cases)[2]<-paste("current_cases_smoothed")
+
+
+
+effect_data<-full_join(current_cases,max_smoothed,ratio, by = "location")
+effect_data$current_cases_smoothed<-as.numeric(effect_data$current_cases_smoothed)
+effect_data$maximal_cases_smoothed<-as.numeric(effect_data$maximal_cases_smoothed)
+effect_data <- mutate(effect_data, ratio = current_cases_smoothed/maximal_cases_smoothed)
+effect_data <- full_join(effect_data, total_vacc_per_hun,by = "location")
+
+#Drawing a plot
+monthly_new_vaccinations<-plot(x=log(effect_data$ratio), y=effect_data$total_vaccinations_per_hundred,
+        main= "Effectiveness of the vaccines in reducing the Covid-19 cases. ",
+        xlab = "Log ratio of the current number and the max number of new cases for each country",
+        ylab= "Vaccinations per hundred people at 01.04.21",
+        col = "lightgreen",
+        pch=8)
+
+outliers <- effect_data %>%  subset( location == "Israel" |location =='United Kingdom')
+with(outliers, points(log(ratio), total_vaccinations_per_hundred, cex=.9, col='red'))
+#with(outliers, text(log(ratio)~total_vaccinations_per_hundred, labels=location, cex=1, pos=4, col='red'))
+```
+the general conclusion is that with the rise of vaccinated people the ratio is becomg less, consequntly, the vacconation is effcetive. Scattered results can be explained because of the usage of different vaccines(effectivness of different vaccines differ) by countries, population structure in countries (may be vaccine have a different effect on different generations). However, the results of vaccination in United Kindom and Israel is very effective comaring to other countries, since they have one of the lowest ratios and one of the highest vaccination levels).
